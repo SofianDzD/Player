@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>جاري فتح المشغل...</title>
+    <script>
+        window.onload = function() {
+            // جلب الرابط والمشغل من رابط الصفحة
+            const urlParams = new URLSearchParams(window.location.search);
+            const videoUrl = urlParams.get('url');
+            const player = urlParams.get('player');
+
+            if (videoUrl) {
+                let intentUrl = "";
+                if (player === "vlc") {
+                    // بروتوكول فتح VLC مباشرة على أندرويد
+                    intentUrl = "intent://" + videoUrl.replace(/^https?:\/\//, "") + "#Intent;scheme=https;package=org.videolan.vlc;end";
+                } else if (player === "mx") {
+                    // بروتوكول فتح MX Player مباشرة على أندرويد
+                    intentUrl = "intent://" + videoUrl.replace(/^https?:\/\//, "") + "#Intent;scheme=https;package=com.mxtech.videoplayer.ad;end";
+                }
+
+                if (intentUrl) {
+                    window.location.href = intentUrl;
+                }
+            }
+            // إغلاق النافذة تلقائياً بعد التحويل إذا فتحت كـ WebApp
+            setTimeout(() => { window.close(); }, 1500);
+        };
+    </script>
+</head>
+<body style="background:#111; color:#fff; text-align:center; font-family:sans-serif; padding-top:20%;">
+    <h2>🚀 جاري توجيه البث إلى المشغل الخارجي...</h2>
+    <p>إذا لم يفتح المشغل تلقائياً، تأكد من تثبيته على هاتفك.</p>
+</body>
+</html>
