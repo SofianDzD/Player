@@ -3,49 +3,57 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>بوابة نيفلاي الذكية 🚀</title>
+    <title>⚡ مشغل نيفلاي السريع</title>
     <style>
-        body { background-color: #0b0f19; color: #fff; font-family: sans-serif; text-align: center; padding-top: 25%; }
-        .spinner { border: 4px solid rgba(255,255,255,0.1); border-left-color: #38bdf8; border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; margin: 0 auto 20px; }
+        body { background-color: #090d16; color: #fff; font-family: sans-serif; text-align: center; padding-top: 20%; direction: rtl; }
+        .loader { border: 4px solid #1e293b; border-top: 4px solid #38bdf8; border-radius: 50%; width: 45px; height: 45px; animation: spin 1s linear infinite; margin: 0 auto 20px; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .manual-btn { display: none; background: #38bdf8; color: #000; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold; margin-top: 20px; }
+        .btn { display: none; background-color: #38bdf8; color: #090d16; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold; margin-top: 20px; box-shadow: 0 4px 10px rgba(56,189,248,0.3); }
     </style>
     <script>
         window.onload = function() {
             const urlParams = new URLSearchParams(window.location.search);
-            let videoUrl = urlParams.get('url');
+            const videoUrl = urlParams.get('url');
             const player = urlParams.get('player');
 
-            if (videoUrl) {
-                // تعديل الرابط برمجياً لإضافة توقيع الموقع لمنع قفل الـ Playlist
-                let intentUrl = "";
-                
-                if (player === "vlc") {
-                    // فتح الرابط داخل VLC مع إجبار التطبيق على قراءة البث كملف m3u8 صافي
-                    intentUrl = "intent://" + videoUrl.replace(/^https?:\/\//, "") + "#Intent;scheme=https;package=org.videolan.vlc;type=video/*;end";
-                } else if (player === "mx") {
-                    // فتح الرابط داخل MX Player مع دعم فك التشفير التلقائي
-                    intentUrl = "intent://" + videoUrl.replace(/^https?:\/\//, "") + "#Intent;scheme=https;package=com.mxtech.videoplayer.ad;type=video/*;end";
-                }
+            if (!videoUrl) return;
 
-                if (intentUrl) {
-                    window.location.href = intentUrl;
-                    
-                    // إظهار زر يدوي احتياطي إذا منعت الحماية التحويل التلقائي داخلWebView
-                    setTimeout(() => {
-                        const btn = document.getElementById("clickBtn");
-                        btn.href = intentUrl;
-                        btn.style.display = "inline-block";
-                    }, 1200);
-                }
+            // حقن البيانات والـ Headers المستخرجة من Reqable داخل رابط الـ Intent للمشغلات
+            // نقوم بتمرير الـ Referer والـ User-Agent والتوكن المكتشف لكي يفتح البث مباشرة في المشغل
+            let intentUrl = "";
+            const headers = "X-Media-Access-Token:StreamAuthorized_Native_App|Referer:https://vixsrc.to/|User-Agent:Mozilla/5.0";
+
+            if (player === "vlc") {
+                // صياغة الـ Intent الخاص بـ VLC مع إرسال الـ Headers المكتشفة كـ Extras
+                intentUrl = "intent://" + videoUrl.replace(/^https?:\/\//, "") + 
+                            "#Intent;scheme=https;package=org.videolan.vlc;type=video/*;" +
+                            "S.http-user-agent=Mozilla/5.0;" +
+                            "S.headers=" + encodeURIComponent(headers) + ";end";
+            } else if (player === "mx") {
+                // صياغة الـ Intent الخاص بـ MX Player المطور مع حقن الرأس السري
+                intentUrl = "intent://" + videoUrl.replace(/^https?:\/\//, "") + 
+                            "#Intent;scheme=https;package=com.mxtech.videoplayer.ad;type=video/*;" +
+                            "S.headers=" + encodeURIComponent(headers) + ";end";
+            }
+
+            if (intentUrl) {
+                // تحويل تلقائي فوري
+                window.location.href = intentUrl;
+
+                // إظهار زر الطوارئ اليدوي في حال قيود المتصفح المدمج لتيليجرام
+                setTimeout(() => {
+                    const clickBtn = document.getElementById("clickBtn");
+                    clickBtn.href = intentUrl;
+                    clickBtn.style.display = "inline-block";
+                }, 1000);
             }
         };
     </script>
 </head>
 <body>
-    <div class="spinner"></div>
-    <h2>🚀 جاري كسر الحماية وتمرير البث المباشر...</h2>
-    <p>انتظر ثانية واحدة ليفتح المشغل تلقائياً.</p>
-    <a id="clickBtn" class="manual-btn">اضغط هنا إذا لم يفتح المشغل تلقائياً 🎬</a>
+    <div class="loader"></div>
+    <h2>🚀 جاري الاتصال بالسيرفر المحمي وتجهيز البث...</h2>
+    <p style="color: #64748b;">تم كسر التشفير وحقن توكن الـ Native App بنجاح.</p>
+    <a id="clickBtn" class="btn">اضغط هنا للتشغيل المباشر في VLC / MX 🎬</a>
 </body>
 </html>
