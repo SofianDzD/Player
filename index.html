@@ -26,7 +26,6 @@
       background: #000;
     }
 
-    /* تنسيق الترجمة */
     video::cue {
       font-size: 1.1em;
       color: #ffffff;
@@ -97,18 +96,17 @@
 
   <div id="sub-badge">🇸🇦 ترجمة عربية</div>
 
-  <video id="player" controls playsinline></video>
+  <video id="player" controls playsinline crossorigin="anonymous"></video>
 
   <script>
     const params  = new URLSearchParams(location.search);
     const src     = params.get('url');
-    const subSrc  = params.get('sub');   // رابط ملف VTT للترجمة
+    const subSrc  = params.get('sub');
     const video   = document.getElementById('player');
     const overlay = document.getElementById('overlay');
     const errBox  = document.getElementById('error');
     const badge   = document.getElementById('sub-badge');
 
-    // إبلاغ Telegram أن المشغّل جاهز
     if (window.Telegram?.WebApp) {
       window.Telegram.WebApp.ready();
       window.Telegram.WebApp.expand();
@@ -123,30 +121,81 @@
       overlay.style.display = 'none';
     }
 
-    // إضافة الترجمة إذا توفّر رابطها
-    function attachSubtitle() {
+    /**
+     * إضافة الترجمة بطريقة متوافقة مع WebView تيليجرام.
+     *
+     * المشكلة: عنصر <track> في بعض المتصفحات/WebViews يرفض:
+     *   - Data URLs  (data:text/vtt;base64,...)
+     *   - روابط CORS خارجية
+     *
+     * الحل: تحويل أي رابط (Data URL أو URL خارجي) إلى Blob URL محلي
+     * عبر JavaScript — هذا يعمل في جميع المتصفحات الحديثة والـ WebViews.
+     */
+    async function attachSubtitle() {
       if (!subSrc) return;
-      const track      = document.createElement('track');
-      track.kind       = 'subtitles';
-      track.label      = 'العربية';
-      track.srclang    = 'ar';
-      track.src        = decodeURIComponent(subSrc);
-      track.default    = true;
-      video.appendChild(track);
 
-      track.addEventListener('load', () => {
-        badge.style.display = 'block';
-        // تفعيل الترجمة تلقائياً
-        if (video.textTracks[0]) {
-          video.textTracks[0].mode = 'showing';
+      try {
+        const decoded = decodeURIComponent(subSrc);
+        let vttText;
+
+        if (decoded.startsWith('data:')) {
+          // Data URL — استخراج المحتوى مباشرةً بدون طلب شبكة
+          const base64 = decoded.split(',')[1];
+          vttText = decodeURIComponent(escape(atob(base64)));
+        } else {
+          // رابط خارجي — تحميله ثم تحويله إلى Blob
+          const res = await fetch(decoded);
+          vttText = await res.text();
         }
-      });
+
+        // التأكد من وجود رأس WEBVTT
+        if (!vttText.trimStart().startsWith('WEBVTT')) {
+          vttText = 'WEBVTT\n\n' + vttText;
+        }
+
+        // إنشاء Blob URL محلي — يتجاوز قيود CORS وData URL تماماً
+        const blob    = new Blob([vttText], { type: 'text/vtt' });
+        const blobUrl = URL.createObjectURL(blob);
+
+        // إزالة أي track سابق
+        while (video.firstChild) video.removeChild(video.firstChild);
+
+        const track   = document.createElement('track');
+        track.kind    = 'subtitles';
+        track.label   = 'العربية';
+        track.srclang = 'ar';
+        track.src     = blobUrl;
+        track.default = true;
+        video.appendChild(track);
+
+        track.addEventListener('load', () => {
+          badge.style.display = 'block';
+          for (let t of video.textTracks) {
+            if (t.language === 'ar') {
+              t.mode = 'showing';
+              break;
+            }
+          }
+        });
+
+        // fallback: تفعيل الترجمة بعد ثانية إذا لم يُطلق حدث load
+        setTimeout(() => {
+          for (let t of video.textTracks) {
+            if (t.language === 'ar' && t.mode !== 'showing') {
+              t.mode = 'showing';
+              badge.style.display = 'block';
+            }
+          }
+        }, 1000);
+
+      } catch (e) {
+        console.warn('Subtitle attach failed:', e);
+      }
     }
 
     if (!src) {
       showError();
     } else if (Hls.isSupported() && !src.includes('.mp4')) {
-      // HLS stream (.m3u8 أو روابط غير مباشرة)
       const hls = new Hls({ enableWorker: false });
       hls.loadSource(decodeURIComponent(src));
       hls.attachMedia(video);
@@ -159,7 +208,6 @@
         if (data.fatal) showError();
       });
     } else {
-      // رابط مباشر (MP4 أو مشابه)
       video.src = decodeURIComponent(src);
       video.addEventListener('canplay', () => {
         hideOverlay();
