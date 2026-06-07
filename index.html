@@ -7,6 +7,7 @@
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
+
     body {
       background: #000;
       display: flex;
@@ -16,40 +17,96 @@
       height: 100vh;
       font-family: Arial, sans-serif;
       color: #fff;
+      overflow: hidden;
     }
+
     video {
       width: 100%;
       max-height: 100vh;
       background: #000;
     }
-    #error {
-      display: none;
-      text-align: center;
-      padding: 20px;
-      color: #ff6b6b;
+
+    /* تنسيق الترجمة */
+    video::cue {
+      font-size: 1.1em;
+      color: #ffffff;
+      background-color: rgba(0, 0, 0, 0.75);
+      font-family: Arial, sans-serif;
+      line-height: 1.5;
     }
-    #loading {
+
+    #overlay {
       position: absolute;
-      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
       color: #aaa;
       font-size: 14px;
+      text-align: center;
+      padding: 20px;
+    }
+
+    #overlay .spinner {
+      width: 36px;
+      height: 36px;
+      border: 3px solid #333;
+      border-top-color: #e50;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #error {
+      display: none;
+      position: absolute;
+      text-align: center;
+      color: #ff6b6b;
+      padding: 20px;
+      font-size: 15px;
+      line-height: 1.7;
+    }
+
+    #sub-badge {
+      display: none;
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      background: rgba(0,180,0,0.85);
+      color: #fff;
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      z-index: 10;
+      pointer-events: none;
     }
   </style>
 </head>
 <body>
-  <div id="loading">⏳ جارٍ تحميل المشغّل...</div>
-  <video id="player" controls playsinline></video>
+
+  <div id="overlay">
+    <div class="spinner"></div>
+    <span>⏳ جارٍ تحميل المشغّل...</span>
+  </div>
+
   <div id="error">
     ❌ تعذّر تشغيل الفيلم.<br>
-    <small>تحقق من الرابط أو جرّب سيرفراً آخر.</small>
+    <small style="color:#aaa">جرّب سيرفراً آخر من البوت.</small>
   </div>
+
+  <div id="sub-badge">🇸🇦 ترجمة عربية</div>
+
+  <video id="player" controls playsinline></video>
 
   <script>
     const params  = new URLSearchParams(location.search);
     const src     = params.get('url');
+    const subSrc  = params.get('sub');   // رابط ملف VTT للترجمة
     const video   = document.getElementById('player');
-    const loading = document.getElementById('loading');
+    const overlay = document.getElementById('overlay');
     const errBox  = document.getElementById('error');
+    const badge   = document.getElementById('sub-badge');
 
     // إبلاغ Telegram أن المشغّل جاهز
     if (window.Telegram?.WebApp) {
@@ -57,35 +114,59 @@
       window.Telegram.WebApp.expand();
     }
 
-    if (!src) {
-      loading.style.display = 'none';
+    function showError() {
+      overlay.style.display = 'none';
       errBox.style.display  = 'block';
-    } else if (Hls.isSupported() && (src.includes('.m3u8') || !src.includes('.mp4'))) {
-      // HLS stream
+    }
+
+    function hideOverlay() {
+      overlay.style.display = 'none';
+    }
+
+    // إضافة الترجمة إذا توفّر رابطها
+    function attachSubtitle() {
+      if (!subSrc) return;
+      const track      = document.createElement('track');
+      track.kind       = 'subtitles';
+      track.label      = 'العربية';
+      track.srclang    = 'ar';
+      track.src        = decodeURIComponent(subSrc);
+      track.default    = true;
+      video.appendChild(track);
+
+      track.addEventListener('load', () => {
+        badge.style.display = 'block';
+        // تفعيل الترجمة تلقائياً
+        if (video.textTracks[0]) {
+          video.textTracks[0].mode = 'showing';
+        }
+      });
+    }
+
+    if (!src) {
+      showError();
+    } else if (Hls.isSupported() && !src.includes('.mp4')) {
+      // HLS stream (.m3u8 أو روابط غير مباشرة)
       const hls = new Hls({ enableWorker: false });
       hls.loadSource(decodeURIComponent(src));
       hls.attachMedia(video);
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        loading.style.display = 'none';
+        hideOverlay();
+        attachSubtitle();
         video.play().catch(() => {});
       });
-      hls.on(Hls.Events.ERROR, (e, data) => {
-        if (data.fatal) {
-          loading.style.display = 'none';
-          errBox.style.display  = 'block';
-        }
+      hls.on(Hls.Events.ERROR, (_, data) => {
+        if (data.fatal) showError();
       });
     } else {
-      // رابط مباشر (MP4 أو غيره)
+      // رابط مباشر (MP4 أو مشابه)
       video.src = decodeURIComponent(src);
       video.addEventListener('canplay', () => {
-        loading.style.display = 'none';
+        hideOverlay();
+        attachSubtitle();
         video.play().catch(() => {});
       });
-      video.addEventListener('error', () => {
-        loading.style.display = 'none';
-        errBox.style.display  = 'block';
-      });
+      video.addEventListener('error', showError);
     }
   </script>
 </body>
