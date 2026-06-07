@@ -2,213 +2,285 @@
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>مشغّل الأفلام</title>
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
-    body {
+    html, body {
+      width: 100%; height: 100%;
       background: #000;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      height: 100vh;
+      overflow: hidden;
       font-family: Arial, sans-serif;
       color: #fff;
-      overflow: hidden;
+    }
+
+    #container {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
 
     video {
       width: 100%;
-      max-height: 100vh;
+      height: 100%;
+      object-fit: contain;
       background: #000;
     }
 
+    /* ترجمة واضحة وكبيرة */
     video::cue {
-      font-size: 1.1em;
-      color: #ffffff;
-      background-color: rgba(0, 0, 0, 0.75);
-      font-family: Arial, sans-serif;
-      line-height: 1.5;
+      font-size: clamp(14px, 3.5vw, 22px);
+      color: #fff;
+      background: rgba(0,0,0,0.78);
+      font-family: 'Segoe UI', Arial, sans-serif;
+      line-height: 1.6;
+      text-shadow: 1px 1px 2px #000;
     }
 
+    /* شاشة التحميل */
     #overlay {
       position: absolute;
+      inset: 0;
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 10px;
-      color: #aaa;
-      font-size: 14px;
-      text-align: center;
-      padding: 20px;
+      justify-content: center;
+      gap: 14px;
+      background: #000;
+      z-index: 20;
     }
-
     #overlay .spinner {
-      width: 36px;
-      height: 36px;
-      border: 3px solid #333;
-      border-top-color: #e50;
+      width: 44px; height: 44px;
+      border: 4px solid #333;
+      border-top-color: #f80;
       border-radius: 50%;
-      animation: spin 0.8s linear infinite;
+      animation: spin .7s linear infinite;
     }
-
+    #overlay span { color: #aaa; font-size: 14px; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
+    /* شاشة الخطأ */
     #error {
       display: none;
       position: absolute;
+      inset: 0;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      background: #000;
+      z-index: 20;
       text-align: center;
-      color: #ff6b6b;
-      padding: 20px;
-      font-size: 15px;
-      line-height: 1.7;
+      padding: 24px;
     }
+    #error .icon { font-size: 42px; }
+    #error .msg  { color: #ff6b6b; font-size: 15px; line-height: 1.7; }
+    #error .hint { color: #666; font-size: 12px; }
 
+    /* شارة الترجمة */
     #sub-badge {
       display: none;
       position: absolute;
-      top: 12px;
-      right: 12px;
-      background: rgba(0,180,0,0.85);
+      top: 10px;
+      right: 10px;
+      background: rgba(0, 160, 60, 0.88);
       color: #fff;
-      font-size: 12px;
-      padding: 4px 10px;
+      font-size: 11px;
+      font-weight: bold;
+      padding: 4px 12px;
       border-radius: 20px;
-      z-index: 10;
+      z-index: 15;
+      pointer-events: none;
+      backdrop-filter: blur(4px);
+    }
+
+    /* شارة حالة الترجمة عند الفشل */
+    #sub-warn {
+      display: none;
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: rgba(180, 80, 0, 0.88);
+      color: #fff;
+      font-size: 11px;
+      padding: 4px 12px;
+      border-radius: 20px;
+      z-index: 15;
       pointer-events: none;
     }
   </style>
 </head>
 <body>
+<div id="container">
 
   <div id="overlay">
     <div class="spinner"></div>
-    <span>⏳ جارٍ تحميل المشغّل...</span>
+    <span id="overlay-text">⏳ جارٍ تحميل المشغّل...</span>
   </div>
 
   <div id="error">
-    ❌ تعذّر تشغيل الفيلم.<br>
-    <small style="color:#aaa">جرّب سيرفراً آخر من البوت.</small>
+    <div class="icon">⚠️</div>
+    <div class="msg">تعذّر تشغيل هذا المصدر.</div>
+    <div class="hint">جرّب سيرفراً آخر من البوت.</div>
   </div>
 
   <div id="sub-badge">🇸🇦 ترجمة عربية</div>
+  <div id="sub-warn">⚠️ بدون ترجمة</div>
 
   <video id="player" controls playsinline crossorigin="anonymous"></video>
 
-  <script>
-    const params  = new URLSearchParams(location.search);
-    const src     = params.get('url');
-    const subSrc  = params.get('sub');
-    const video   = document.getElementById('player');
-    const overlay = document.getElementById('overlay');
-    const errBox  = document.getElementById('error');
-    const badge   = document.getElementById('sub-badge');
+</div>
+<script>
+  /* ─── استخراج المعاملات ─────────────────────────────────────── */
+  const params = new URLSearchParams(location.search);
+  const src    = params.get('url');
+  const subSrc = params.get('sub');
 
-    if (window.Telegram?.WebApp) {
-      window.Telegram.WebApp.ready();
-      window.Telegram.WebApp.expand();
-    }
+  const video    = document.getElementById('player');
+  const overlay  = document.getElementById('overlay');
+  const overlayT = document.getElementById('overlay-text');
+  const errBox   = document.getElementById('error');
+  const badge    = document.getElementById('sub-badge');
+  const warn     = document.getElementById('sub-warn');
 
-    function showError() {
-      overlay.style.display = 'none';
-      errBox.style.display  = 'block';
-    }
+  /* ─── Telegram WebApp ──────────────────────────────────────── */
+  if (window.Telegram?.WebApp) {
+    window.Telegram.WebApp.ready();
+    window.Telegram.WebApp.expand();
+  }
 
-    function hideOverlay() {
-      overlay.style.display = 'none';
-    }
+  /* ─── مساعدات ──────────────────────────────────────────────── */
+  const hideOverlay = () => overlay.style.display = 'none';
+  const showError   = () => {
+    overlay.style.display = 'none';
+    errBox.style.display  = 'flex';
+  };
 
-    /**
-     * إضافة الترجمة بطريقة متوافقة مع WebView تيليجرام.
-     *
-     * المشكلة: عنصر <track> في بعض المتصفحات/WebViews يرفض:
-     *   - Data URLs  (data:text/vtt;base64,...)
-     *   - روابط CORS خارجية
-     *
-     * الحل: تحويل أي رابط (Data URL أو URL خارجي) إلى Blob URL محلي
-     * عبر JavaScript — هذا يعمل في جميع المتصفحات الحديثة والـ WebViews.
-     */
-    async function attachSubtitle() {
-      if (!subSrc) return;
+  /**
+   * إضافة الترجمة — الطريقة الوحيدة الموثوقة في WebView تيليجرام:
+   *
+   * 1. إذا كان الرابط Data URL (base64) → نفكّه مباشرةً في الذاكرة.
+   * 2. إذا كان رابطاً خارجياً → نُحمّله عبر fetch().
+   * 3. في كلا الحالتين → ننشئ Blob URL محلياً ونُسنده لـ <track>.
+   *
+   * Blob URL يتجاوز قيود CORS وData URL في <track> تماماً.
+   */
+  async function attachSubtitle() {
+    if (!subSrc) { warn.style.display = 'block'; return; }
 
-      try {
-        const decoded = decodeURIComponent(subSrc);
-        let vttText;
+    try {
+      const decoded = decodeURIComponent(subSrc);
+      let vttText;
 
-        if (decoded.startsWith('data:')) {
-          // Data URL — استخراج المحتوى مباشرةً بدون طلب شبكة
-          const base64 = decoded.split(',')[1];
-          vttText = decodeURIComponent(escape(atob(base64)));
-        } else {
-          // رابط خارجي — تحميله ثم تحويله إلى Blob
-          const res = await fetch(decoded);
-          vttText = await res.text();
-        }
-
-        // التأكد من وجود رأس WEBVTT
-        if (!vttText.trimStart().startsWith('WEBVTT')) {
-          vttText = 'WEBVTT\n\n' + vttText;
-        }
-
-        // إنشاء Blob URL محلي — يتجاوز قيود CORS وData URL تماماً
-        const blob    = new Blob([vttText], { type: 'text/vtt' });
-        const blobUrl = URL.createObjectURL(blob);
-
-        // إزالة أي track سابق
-        while (video.firstChild) video.removeChild(video.firstChild);
-
-        const track   = document.createElement('track');
-        track.kind    = 'subtitles';
-        track.label   = 'العربية';
-        track.srclang = 'ar';
-        track.src     = blobUrl;
-        track.default = true;
-        video.appendChild(track);
-
-        track.addEventListener('load', () => {
-          badge.style.display = 'block';
-          for (let t of video.textTracks) {
-            if (t.language === 'ar') {
-              t.mode = 'showing';
-              break;
-            }
-          }
-        });
-
-        // fallback: تفعيل الترجمة بعد ثانية إذا لم يُطلق حدث load
-        setTimeout(() => {
-          for (let t of video.textTracks) {
-            if (t.language === 'ar' && t.mode !== 'showing') {
-              t.mode = 'showing';
-              badge.style.display = 'block';
-            }
-          }
-        }, 1000);
-
-      } catch (e) {
-        console.warn('Subtitle attach failed:', e);
+      if (decoded.startsWith('data:')) {
+        /* Data URL — فكّ base64 في المتصفح */
+        const comma  = decoded.indexOf(',');
+        const b64    = decoded.slice(comma + 1);
+        const binary = atob(b64);
+        const bytes  = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        vttText = new TextDecoder('utf-8').decode(bytes);
+      } else {
+        /* رابط خارجي */
+        const res = await fetch(decoded, { mode: 'cors' });
+        if (!res.ok) throw new Error(`fetch ${res.status}`);
+        vttText = await res.text();
       }
-    }
 
-    if (!src) {
-      showError();
-    } else if (Hls.isSupported() && !src.includes('.mp4')) {
-      const hls = new Hls({ enableWorker: false });
-      hls.loadSource(decodeURIComponent(src));
+      /* ضمان وجود رأس WEBVTT */
+      if (!vttText.trimStart().startsWith('WEBVTT')) {
+        vttText = 'WEBVTT\n\n' + vttText;
+      }
+
+      /* إنشاء Blob URL — يعمل في جميع المتصفحات والـ WebViews */
+      const blob    = new Blob([vttText], { type: 'text/vtt; charset=utf-8' });
+      const blobUrl = URL.createObjectURL(blob);
+
+      /* إزالة أي track قديم */
+      [...video.querySelectorAll('track')].forEach(t => t.remove());
+
+      const track   = document.createElement('track');
+      track.kind    = 'subtitles';
+      track.label   = 'العربية';
+      track.srclang = 'ar';
+      track.src     = blobUrl;
+      track.default = true;
+      video.appendChild(track);
+
+      const activateTrack = () => {
+        for (const t of video.textTracks) {
+          if (t.language === 'ar') {
+            t.mode = 'showing';
+            badge.style.display = 'block';
+            return true;
+          }
+        }
+        return false;
+      };
+
+      track.addEventListener('load', activateTrack);
+
+      /* fallback بعد ثانية واحدة */
+      setTimeout(() => {
+        if (!activateTrack()) warn.style.display = 'block';
+      }, 1200);
+
+    } catch (e) {
+      console.warn('Subtitle error:', e);
+      warn.style.display = 'block';
+    }
+  }
+
+  /* ─── تشغيل الفيلم ─────────────────────────────────────────── */
+  if (!src) {
+    showError();
+  } else {
+    const decodedSrc = decodeURIComponent(src);
+    const isHls = !decodedSrc.includes('.mp4') && !decodedSrc.includes('.webm');
+
+    if (isHls && Hls.isSupported()) {
+      const hls = new Hls({
+        enableWorker:       false,
+        maxBufferLength:    30,
+        maxMaxBufferLength: 60,
+      });
+      hls.loadSource(decodedSrc);
       hls.attachMedia(video);
+
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         hideOverlay();
         attachSubtitle();
         video.play().catch(() => {});
       });
+
       hls.on(Hls.Events.ERROR, (_, data) => {
-        if (data.fatal) showError();
+        if (data.fatal) {
+          if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+            hls.startLoad();
+          } else {
+            showError();
+          }
+        }
       });
+
+    } else if (isHls && video.canPlayType('application/vnd.apple.mpegurl')) {
+      /* Safari / iOS native HLS */
+      video.src = decodedSrc;
+      video.addEventListener('loadedmetadata', () => {
+        hideOverlay();
+        attachSubtitle();
+        video.play().catch(() => {});
+      });
+      video.addEventListener('error', showError);
+
     } else {
-      video.src = decodeURIComponent(src);
+      /* MP4 / رابط مباشر */
+      video.src = decodedSrc;
       video.addEventListener('canplay', () => {
         hideOverlay();
         attachSubtitle();
@@ -216,6 +288,7 @@
       });
       video.addEventListener('error', showError);
     }
-  </script>
+  }
+</script>
 </body>
 </html>
